@@ -1,0 +1,27 @@
+# Python bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual Environments
+venv/
+env/
+.env
+.venv/
+
+# Streamlit
+# Ignore secrets (passwords/keys) but keep config.toml
+.streamlit/secrets.toml
+
+# IDE settings (VS Code, PyCharm)
+.vscode/
+.idea/
+
+# Local Data Files (Prevent accidental upload of test data)
+*.csv
+*.xlsx
+*.xls
+
+# OS generated files
+.DS_Store
+Thumbs.db
