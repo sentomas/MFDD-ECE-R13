@@ -20,8 +20,8 @@ with col_title:
     st.title("Passenger Vehicle MFDD Analyzer")
 
 st.markdown("""
-This tool calculates **Mean Fully Developed Deceleration (MFDD)** for passenger vehicles according to **ECE R13 / SAE J299** standards.
-It analyzes the deceleration phase between **80% and 10%** of the initial braking speed.
+This tool, developed by Serin Thomas, calculates **Mean Fully Developed Deceleration (MFDD)** for passenger vehicles according to **ECE R13 / SAE J299** standards.
+It analyzes the deceleration phase between **80% and 10%** of the initial braking speed. write to services@serinthomas.in for custom solutions.
 """)
 st.divider()
 
