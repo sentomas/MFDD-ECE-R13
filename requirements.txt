@@ -3,4 +3,5 @@ pandas
 numpy
 plotly
 scipy
+python-docx
 openpyxl
