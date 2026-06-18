@@ -87,7 +87,7 @@ if uploaded_file is not None:
         st.error(f"Error loading file: {e}")
         st.stop()
 
-    # 2. Column Selection (FIXED FOR CRASH)
+    # 2. Column Selection 
     cols = raw_df.columns.tolist()
     
     # Safety logic: Only default to index 1 if a second column actually exists
@@ -104,7 +104,12 @@ if uploaded_file is not None:
     if t_col == v_col and len(cols) > 1:
         st.warning("⚠️ You have selected the same column for Time and Velocity.")
 
-    # 3. Process Data
+    # 3. Process Data (FIX APPLIED HERE)
+    # Force columns to numeric and drop invalid text rows to prevent Division by String errors
+    raw_df[t_col] = pd.to_numeric(raw_df[t_col], errors='coerce')
+    raw_df[v_col] = pd.to_numeric(raw_df[v_col], errors='coerce')
+    raw_df = raw_df.dropna(subset=[t_col, v_col]).reset_index(drop=True)
+
     df = normalize_units(raw_df, t_col, v_col, time_unit, vel_unit)
 
     # Smoothing
@@ -131,7 +136,7 @@ if uploaded_file is not None:
         line=dict(color='gray', width=2)
     ))
     fig_raw.update_layout(
-        xaxis_title=f"Time (s)",
+        xaxis_title="Time (s)",
         yaxis_title="Velocity (km/h)",
         hovermode="x unified",
         margin=dict(l=20, r=20, t=40, b=20),
