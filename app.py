@@ -32,6 +32,7 @@ time_unit = st.sidebar.selectbox("Time Unit", ["Seconds (s)", "Milliseconds (ms)
 vel_unit = st.sidebar.selectbox("Velocity Unit", ["km/h", "m/s", "mph"], index=0)
 
 st.sidebar.header("2. Brake Detection")
+detect_max_speed = st.sidebar.checkbox("Detect Max Speed on Every Braking (Auto-Start)", value=True, help="Finds the absolute maximum speed in each cycle to perfectly set the start point of the brake.")
 min_peak_speed = st.sidebar.number_input("Min Peak Speed to count as test (km/h)", value=50)
 min_distance_samples = st.sidebar.number_input("Min data rows between brakes", value=100)
 
@@ -77,20 +78,16 @@ def generate_word_report(df_results):
     doc = Document()
     doc.add_heading('MFDD Brake Test Summary Report', 0)
     
-    # Add a table based on the dataframe
     t = doc.add_table(rows=1, cols=len(df_results.columns))
     t.style = 'Table Grid'
     
-    # Header row
     hdr_cells = t.rows[0].cells
     for i, col_name in enumerate(df_results.columns):
         hdr_cells[i].text = str(col_name)
         
-    # Data rows
     for index, row in df_results.iterrows():
         row_cells = t.add_row().cells
         for i, col_name in enumerate(df_results.columns):
-            # Format numbers to look cleaner
             val = row[col_name]
             if isinstance(val, float):
                 val = f"{val:.2f}"
@@ -141,40 +138,41 @@ if uploaded_file is not None:
     peaks, _ = find_peaks(df['v_smooth_kmh'], height=min_peak_speed, distance=min_distance_samples)
     
     st.subheader(f"🏁 Detected {len(peaks)} Braking Events")
-    
-    # Plot Full Run with peaks highlighted
-    fig_raw = go.Figure()
-    fig_raw.add_trace(go.Scatter(x=df[t_col], y=df['v_smooth_kmh'], mode='lines', name='Velocity (km/h)', line=dict(color='gray', width=2)))
-    fig_raw.add_trace(go.Scatter(x=df.loc[peaks, t_col], y=df.loc[peaks, 'v_smooth_kmh'], mode='markers', name='Detected Starts', marker=dict(color='red', size=8, symbol='circle')))
-    fig_raw.update_layout(xaxis_title="Time (s)", yaxis_title="Velocity (km/h)", hovermode="x unified", height=400)
-    st.plotly_chart(fig_raw, use_container_width=True)
 
     # Calculate metrics for each peak
     results = []
     brake_dataframes = {}
+    actual_start_indices = []
 
     for i, peak_idx in enumerate(peaks):
-        v_0 = df.loc[peak_idx, 'v_smooth_kmh']
-        
-        # Define search window for this brake (until the next peak, or end of file)
         next_peak_idx = peaks[i+1] if i+1 < len(peaks) else len(df)-1
-        search_window = df.loc[peak_idx:next_peak_idx].copy().reset_index(drop=True)
+        
+        # --- NEW LOGIC: DETECT EXACT MAX SPEED ---
+        if detect_max_speed:
+            # Look slightly before the detected peak just in case the true max was shifted by noise
+            search_start = max(0, peak_idx - int(min_distance_samples / 2))
+            true_start_idx = df.loc[search_start:next_peak_idx, 'v_smooth_kmh'].idxmax()
+        else:
+            true_start_idx = peak_idx
+            
+        actual_start_indices.append(true_start_idx)
+        v_0 = df.loc[true_start_idx, 'v_smooth_kmh']
+        # -----------------------------------------
+
+        search_window = df.loc[true_start_idx:next_peak_idx].copy().reset_index(drop=True)
         
         search_window['dt'] = search_window[t_col].diff().fillna(0)
         search_window['distance'] = (search_window['v_smooth_ms'] * search_window['dt']).cumsum()
         
-        # Find when it stops (speed < 1.0 km/h) or use the lowest point
         stop_indices = search_window[search_window['v_smooth_kmh'] < 1.0].index
         if len(stop_indices) > 0:
             stop_idx = stop_indices[0]
         else:
-            # If it didn't fully stop before the next acceleration, take the minimum speed point
             stop_idx = search_window['v_smooth_kmh'].idxmin()
 
         brake_df = search_window.loc[:stop_idx].copy()
         brake_dataframes[f"Brake {i+1}"] = brake_df
 
-        # Calculate MFDD
         target_b_pct = start_threshold_pct / 100.0
         target_e_pct = end_threshold_pct / 100.0
         v_b_target = target_b_pct * v_0
@@ -201,6 +199,13 @@ if uploaded_file is not None:
             "Stop Dist (m)": total_stop_dist,
             "Stop Time (s)": total_stop_time
         })
+
+    # Plot Full Run with actual start points highlighted
+    fig_raw = go.Figure()
+    fig_raw.add_trace(go.Scatter(x=df[t_col], y=df['v_smooth_kmh'], mode='lines', name='Velocity (km/h)', line=dict(color='gray', width=2)))
+    fig_raw.add_trace(go.Scatter(x=df.loc[actual_start_indices, t_col], y=df.loc[actual_start_indices, 'v_smooth_kmh'], mode='markers', name='Actual Starts', marker=dict(color='red', size=8, symbol='circle')))
+    fig_raw.update_layout(xaxis_title="Time (s)", yaxis_title="Velocity (km/h)", hovermode="x unified", height=400)
+    st.plotly_chart(fig_raw, use_container_width=True)
 
     # Results Table & Word Export
     if results:
@@ -231,10 +236,9 @@ if uploaded_file is not None:
         col_m3.metric("Stopping Dist", f"{sel_result['Stop Dist (m)']:.2f} m")
         col_m4.metric("Stopping Time", f"{sel_result['Stop Time (s)']:.2f} s")
 
-        # Re-calculate points just for plotting the detailed graph
         v_0 = sel_result['Initial Speed (km/h)']
-        idx_b = find_nearest_idx(sel_df['v_smooth_kmh'].values, target_b_pct * v_0)
-        idx_e = find_nearest_idx(sel_df['v_smooth_kmh'].values, target_e_pct * v_0)
+        idx_b = find_nearest_idx(sel_df['v_smooth_kmh'].values, start_threshold_pct / 100.0 * v_0)
+        idx_e = find_nearest_idx(sel_df['v_smooth_kmh'].values, end_threshold_pct / 100.0 * v_0)
         t_b = sel_df.iloc[idx_b][t_col]
         t_e = sel_df.iloc[idx_e][t_col]
         v_b = sel_df.iloc[idx_b]['v_smooth_kmh']
